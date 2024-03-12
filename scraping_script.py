@@ -47,6 +47,7 @@ def get_request(client, url, max_retries=3):
             if status == 200:
                 data = res.content
                 soup = BeautifulSoup(data, "html.parser")
+                logger.info(f"Successfully extracted the soup from {url}")
                 return soup
             else: 
                 return None
@@ -72,8 +73,9 @@ def scrape_document(cik_name: str, date: str, cik_num: str, accsNum: str, docume
     while retries < max_retries:
         try:
             url = f"https://www.sec.gov/Archives/edgar/data/{cik_num}/{accsNum}/{document}"
-            logger.info(f"Currently beginning scraping for cik name {cik_num} and document {document}")
+            logger.info(f"Currently beginning scraping for cik name {cik_name} and document {document}")
             soup = get_request(client, url)
+            logger.info(f"Completed scraping for cik name {cik_name} and document {document}")
             page_content.append({
                         "cik_name": cik_name,
                         "reporting_date": date,
@@ -145,7 +147,7 @@ if __name__ == "__main__":
         "row_id", F.row_number().over(Window.orderBy("cik_number"))
     )
     total_items = companies_df.count()
-    batch_size = 10
+    batch_size = 110
     num_batches = (total_items + batch_size - 1) // batch_size
     logger.info(f"Total Number of Batches: {num_batches}")
     for i in range(0,num_batches):
@@ -155,7 +157,7 @@ if __name__ == "__main__":
         chunked_df = companies_df.filter(
             (F.col("row_id") >= start_idx) & (F.col("row_id") < end_idx)
         )
-        with ThreadPoolExecutor(max_workers=1) as executor:
+        with ThreadPoolExecutor(max_workers=11) as executor:
             chunked_df = chunked_df.drop("row_id")
             pd_df = chunked_df.toPandas()
             processed_rows = list(executor.map(scrap_table, pd_df.to_dict(orient="records"))
