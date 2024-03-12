@@ -38,51 +38,37 @@ def save_dataframepqt(df: DataFrame, path: str):
     else:
         df.write.mode("overwrite").parquet(path)
 
-def get_request(client, url, max_retries=3):
-    retries = 0
-    while retries < max_retries:
-        try:
-            res = client.get(url, params = {'render_js': 'False',})
-            status = res.raise_for_status()
-            if status == 200:
-                data = res.content
-                soup = BeautifulSoup(data, "html.parser")
-                logger.info(f"Successfully extracted the soup from {url}")
-                return soup
-            else: 
-                return None
-        except HTTPError as errh:
-            logger.error("Http Error:", errh)
-            time.sleep(2)
-        except ConnectionError as errc:
-            logger.error("Error Connecting:", errc)
-            time.sleep(2)
-        except Timeout as errt:
-            logger.error("Timeout Error:", errt)
-            time.sleep(2)
-        except RequestException as err:
-            logger.error("OOps: Something Else", err)
-            time.sleep(2)
-        retries += 1
-        time.sleep(2)
-    return None
-
 def scrape_document(cik_name: str, date: str, cik_num: str, accsNum: str, document: str, client, max_retries=3):
     retries = 0
     page_content = []
+    default_soup = 'No Soup! Got Value other than 200'
     while retries < max_retries:
         try:
             url = f"https://www.sec.gov/Archives/edgar/data/{cik_num}/{accsNum}/{document}"
             logger.info(f"Currently beginning scraping for cik name {cik_name} and document {document}")
-            soup = get_request(client, url)
-            logger.info(f"Completed scraping for cik name {cik_name} and document {document}")
-            page_content.append({
-                        "cik_name": cik_name,
-                        "reporting_date": date,
-                        "url":url,
-                        "contents": soup
-                    })
-            return page_content
+            print(url)
+            res = client.get(url, params = {'render_js': 'False',})
+            if res.status_code == 200:
+                data = res.content
+                soup = BeautifulSoup(data, "html.parser")
+                soupstr = str(soup)
+                logger.info(f"Successfully extracted the soup from {url}")
+                page_content.append({
+                            "cik_name": cik_name,
+                            "reporting_date": date,
+                            "url":url,
+                            "contents": soupstr
+                        })
+                return page_content
+            else:
+                page_content.append({
+                            "cik_name": cik_name,
+                            "reporting_date": date,
+                            "url":url,
+                            "contents": default_soup
+                        })
+                logger.info(f"Couldnt extract soup, so sending default data")
+                return page_content
         except requests.exceptions.HTTPError as errh:
             logger.info("Http Error:", errh)
             time.sleep(2)
@@ -98,7 +84,6 @@ def scrape_document(cik_name: str, date: str, cik_num: str, accsNum: str, docume
         time.sleep(5)
     return None
 
-
 def scrap_table(dict_records: dict):
     cik_num = dict_records["cik_number"]
     date = dict_records["reportDate"]
@@ -106,18 +91,23 @@ def scrap_table(dict_records: dict):
     document = dict_records["primaryDocument"]
     cik_name = dict_records["cik_name"]
     tables = scrape_document(cik_name, date, cik_num, accsNum, document, client)
+    logger.info(f"scrapped the document from {document} inside the CIK name {cik_name}!!")
     data = []
     for table in tables:
         data.append(Row(**table))
     return data
 
-
-
 def process_chunked_df(processed_rows):
     if len(processed_rows) > 0:
         logger.info(len(processed_rows))
+        schema = T.StructType([
+                    T.StructField("cik_name", T.StringType(), True),
+                    T.StructField("reporting_date", T.StringType(), True),
+                    T.StructField("url", T.StringType(), True),
+                    T.StructField("contents", T.StringType(), True),
+                ])
         table_data = spark.sparkContext.parallelize(processed_rows)
-        table_df = spark.createDataFrame(table_data)
+        table_df = spark.createDataFrame(table_data, schema= schema)
         table_df = table_df.select(
             F.col("_1.cik_name").alias("cik_name"),
             F.col("_1.reporting_date").alias("reporting_date"),
