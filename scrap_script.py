@@ -123,6 +123,7 @@ def process_chunked_df(processed_rows):
 
 if __name__ == "__main__":
     api_key = ''
+    global client
     client = ScrapingBeeClient(api_key=api_key)
     logger.info(f"Scraping Table content Started")
     #companies_df = spark.read.parquet("/home/kushal/IA-FEB7/data/output/companies_details/company_detail.parquet")
