@@ -11,7 +11,8 @@ from requests.exceptions import (
     HTTPError,
     ConnectionError,
     RequestException,
-    Timeout
+    Timeout,
+    ChunkedEncodingError
 )
 
 import pandas as pd
@@ -78,6 +79,15 @@ def scrape_document(cik_name: str, date: str, cik_num: str, accsNum: str, docume
         except requests.exceptions.Timeout as errt:
             logger.info("Timeout Error:", errt)
             time.sleep(2)
+        except requests.exceptions.ChunkedEncodingError as ex:
+            logger.info("Invalid Chunk Encoding:", ex)
+            page_content.append({
+                            "cik_name": cik_name,
+                            "reporting_date": date,
+                            "url":url,
+                            "contents": default_soup
+                        })
+            return page_content
         except requests.exceptions.RequestException as err:
             logger.info("OOps: Something Else", err)
         retries += 1
@@ -100,12 +110,12 @@ def scrap_table(dict_records: dict):
 def process_chunked_df(processed_rows):
     if len(processed_rows) > 0:
         logger.info(len(processed_rows))
-        schema = T.StructType([
-                    T.StructField("cik_name", T.StringType(), True),
-                    T.StructField("reporting_date", T.StringType(), True),
-                    T.StructField("url", T.StringType(), True),
-                    T.StructField("contents", T.StringType(), True),
-                ])
+        # schema = T.StructType([
+        #             T.StructField("cik_name", T.StringType(), True),
+        #             T.StructField("reporting_date", T.StringType(), True),
+        #             T.StructField("url", T.StringType(), True),
+        #             T.StructField("contents", T.StringType(), True),
+        #         ])
         table_data = spark.sparkContext.parallelize(processed_rows)
         table_df = spark.createDataFrame(table_data, schema= schema)
         table_df = table_df.select(
@@ -115,9 +125,9 @@ def process_chunked_df(processed_rows):
             F.col("_1.contents").alias("contents"),
         )
         table_df = table_df.filter(F.col("contents").isNotNull())
-        save_dataframepqt(table_df, "data/output/table_contents/new_table_contents")
+        save_dataframepqt(table_df, "data/output/table_contents/new5_table_contents")
         logger.info(
-            f"Saved the document to 'data/output/table_contents/new_table_contents'"
+            f"Saved the document to 'data/output/table_contents/new5_table_contents'"
         )
 
 
@@ -138,10 +148,10 @@ if __name__ == "__main__":
         "row_id", F.row_number().over(Window.orderBy("cik_number"))
     )
     total_items = companies_df.count()
-    batch_size = 110
+    batch_size = 55
     num_batches = (total_items + batch_size - 1) // batch_size
     logger.info(f"Total Number of Batches: {num_batches}")
-    for i in range(0,num_batches):
+    for i in range(16,num_batches):
         start_idx = i * batch_size
         end_idx = min((i + 1) * batch_size, total_items)
         logger.info(f"Batche of index: {start_idx}-{end_idx} and {i}/{num_batches} and started.")
